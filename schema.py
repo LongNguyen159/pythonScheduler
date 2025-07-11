@@ -30,9 +30,7 @@ class CustomDaily(BaseModel):
 class CustomWeekly(BaseModel):
     frequency: Literal["weekly"]
     interval: int = Field(..., gt=0, description="Every X weeks")
-    weekdays: List[Literal[
-        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
-    ]]
+    weekdays: List[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]]
 
 class CustomMonthly(BaseModel):
     frequency: Literal["monthly"]
@@ -60,6 +58,7 @@ class TaskSchedulePayload(BaseModel):
     repeat: Optional[Repeat] = None
     end_repeat: Optional[EndRepeat] = None
     args: Optional[List[Any]] = []
+    kwargs: Optional[Dict[str, Any]] = {}
 
     @model_validator(mode="after")
     def validate_repeat_logic(self):
