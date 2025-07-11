@@ -1,0 +1,12 @@
+[project]
+name = "python"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "apscheduler>=3.11.0",
+    "pydantic>=2.11.7",
+    "pytz>=2025.2",
+    "schedule>=1.2.2",
+]
