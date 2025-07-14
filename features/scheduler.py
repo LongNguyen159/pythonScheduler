@@ -1,6 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.job import Job
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any, Dict, Union
 from features.schema import (
     TaskSchedulePayload,
     RepeatSimple,
@@ -11,6 +12,11 @@ from features.schema import (
     EndRepeatNever,
     EndRepeatOnDate,
     EndRepeatAfterOccurrences,
+    EndRepeatMode,
+    RepeatType,
+    Frequency,
+    EndRepeat,
+    CustomRepeat
 )
 import json
 import time
@@ -25,114 +31,71 @@ now = datetime.now()
 def task_runner(*args, **kwargs):
     print("Executing task with", args, kwargs)
 
-def schedule_from_payload(payload: TaskSchedulePayload):
-    task_id = payload.task_id
-    start_time = payload.start_time if isinstance(payload.start_time, datetime) else datetime.fromisoformat(payload.start_time)
-    is_repeat = payload.is_repeat
+
+
+def schedule_from_payload(payload: TaskSchedulePayload) -> Job:
+    task_id: str = payload.task_id
+    start_time: datetime = payload.start_time if isinstance(payload.start_time, datetime) else datetime.fromisoformat(payload.start_time)
+    is_repeat: bool = payload.is_repeat
     args = getattr(payload, "args", [])
     kwargs = getattr(payload, "kwargs", {})  # Add this line
     
-    trigger = None
-    trigger_args = {}
-    print(f"Scheduling task {task_id} at {start_time} with repeat={is_repeat}\n")
-
-    print("Payload (formatted):")
-    print(json.dumps(payload.model_dump(), indent=2, default=str))
-
+    trigger: Union[CronTrigger, IntervalTrigger, DateTrigger, None] = None
 
 
     if not is_repeat:
         # ========== One-time job ==========
-        trigger_args = {
-            "run_date": start_time
-        }
-        trigger = DateTrigger(**trigger_args)
+        trigger = DateTrigger(run_date=start_time)
     else:
+        # ========== Repeating job ==========
         repeat = payload.repeat
         end_repeat = payload.end_repeat
-        
+
+
         # Apply end_repeat constraints
-        if end_repeat and end_repeat.mode == "on_date":
-            if isinstance(end_repeat.until, datetime):
-                trigger_args["end_date"] = end_repeat.until
-            else:
-                trigger_args["end_date"] = datetime.fromisoformat(end_repeat.until)
+        end_date = None
+        if end_repeat:
+            if isinstance(end_repeat, EndRepeatOnDate): # Validate if end_repeat is of type EndRepeatOnDate
+                end_date = end_repeat.until if isinstance(end_repeat.until, datetime) else datetime.fromisoformat(end_repeat.until)
+
         if repeat is None:
             raise ValueError("`repeat` must be provided if `is_repeat` is True.")
-        
 
-        # ========== Fixed patterns ==========
-        if repeat.type in ["daily", "weekly", "monthly", "yearly"]:
-            if repeat.type == "daily":
-                # Use IntervalTrigger for daily repeat
-                trigger_args = {
-                    "days": 1,
-                    "start_date": start_time
-                }
-                trigger = IntervalTrigger(**trigger_args)
-            # Optionally, add similar logic for weekly/monthly/yearly if desired
-            elif repeat.type == "weekly":
-                trigger_args = {
-                    "weeks": 1,
-                    "start_date": start_time
-                }
-                trigger = IntervalTrigger(**trigger_args)
-            else:
-                # Fallback to original CronTrigger logic for monthly/yearly
-                trigger_args.update({
-                    "hour": start_time.hour,
-                    "minute": start_time.minute,
-                    "second": start_time.second,
-                    "start_date": start_time,
-                })
-                if repeat.type == "monthly":
-                    trigger_args["day"] = start_time.day
-                elif repeat.type == "yearly":
-                    trigger_args["month"] = start_time.month
-                    trigger_args["day"] = start_time.day
-                trigger = CronTrigger(**trigger_args)
-        elif repeat.type == "custom":
+        # Repeat Custom handling
+        if isinstance(repeat, RepeatCustom):
             custom = repeat.custom
-            frequency = custom.frequency
-            if frequency == "daily":
-                trigger_args.update({
-                    "days": custom.interval,
-                    "start_date": start_time
-                })
-                trigger = IntervalTrigger(**trigger_args)
-            elif frequency == "weekly":
-                weekdays = getattr(custom, "weekdays", None)
-                if weekdays is None:
-                    raise ValueError("Custom weekly schedule must provide 'weekdays'.")
-                # CronTrigger expects comma-separated three-letter weekday names
-                trigger_args.update({
-                    "day_of_week": ",".join(weekdays),
-                    "hour": start_time.hour,
-                    "minute": start_time.minute,
-                    "second": start_time.second,
-                    "start_date": start_time
-                })
-                trigger = CronTrigger(**trigger_args)
-            elif frequency == "monthly":
-                trigger_args.update({
-                    "day": start_time.day,
-                    "month": f"*/{custom.interval}",
-                    "hour": start_time.hour,
-                    "minute": start_time.minute,
-                    "second": start_time.second,
-                    "start_date": start_time
-                })
-                trigger = CronTrigger(**trigger_args)
-            else:
-                raise ValueError("Invalid custom frequency")
+            match custom.frequency:
+                case Frequency.DAILY:
+                    trigger = IntervalTrigger(days=custom.interval, start_date=start_time, end_date=end_date)
+                case Frequency.WEEKLY:
+                    weekdays = getattr(custom, "weekdays", None)
+                    if weekdays is None:
+                        raise ValueError("Custom weekly schedule must provide 'weekdays'.")
+                    # CronTrigger expects comma-separated three-letter weekday names
+                    trigger = CronTrigger(day_of_week=",".join(weekdays), hour=start_time.hour, minute=start_time.minute, second=start_time.second, start_date=start_time, end_date=end_date)
+                case Frequency.MONTHLY:
+                    trigger = CronTrigger(day=start_time.day, month=f"*/{custom.interval}", hour=start_time.hour, minute=start_time.minute, second=start_time.second, start_date=start_time, end_date=end_date)
+                case _:
+                    raise ValueError("Invalid custom frequency")
+        # Repeat Simple handling
+        elif repeat.type in [RepeatType.DAILY, RepeatType.WEEKLY, RepeatType.MONTHLY, RepeatType.YEARLY]:
+            match repeat.type:
+                case RepeatType.DAILY:
+                    trigger = IntervalTrigger(days=1, start_date=start_time, end_date=end_date)
+                case RepeatType.WEEKLY:
+                    trigger = IntervalTrigger(weeks=1, start_date=start_time, end_date=end_date)
+                case RepeatType.MONTHLY:
+                    trigger = CronTrigger(day=start_time.day, hour=start_time.hour, minute=start_time.minute, second=start_time.second, start_date=start_time, end_date=end_date)
+                case RepeatType.YEARLY:
+                    trigger = CronTrigger(month=start_time.month, day=start_time.day, hour=start_time.hour, minute=start_time.minute, second=start_time.second, start_date=start_time, end_date=end_date)
+                case _:
+                    raise ValueError("Invalid repeat type")
         else:
             raise ValueError("Invalid repeat type")
 
+
+
     print(f"Scheduling job {task_id} with trigger: {trigger}\n")
-    print(f"Trigger args: {trigger_args}\n")
-    print(f"Trigger: {trigger}\n")
-    
-    
     return scheduler.add_job(
         func=task_runner,
         trigger=trigger,
@@ -143,6 +106,15 @@ def schedule_from_payload(payload: TaskSchedulePayload):
         replace_existing=True,
     )
     
+
+
+
+
+
+
+
+
+
 
 
 # ========== Test Examples ==========
@@ -249,6 +221,3 @@ def schedule_from_payload(payload: TaskSchedulePayload):
 #     kwargs={"demo": True},
 #     replace_existing=True,
 # )
-
-
-time.sleep(20)  # Keep script alive to allow jobs to runimport timedef schedule_test_cron_every_second():

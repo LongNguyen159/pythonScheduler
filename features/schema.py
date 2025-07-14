@@ -1,56 +1,76 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import List, Optional, Literal, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any
 from datetime import datetime
+from enum import Enum
 
+# ========== Enums ==========
+class EndRepeatMode(str, Enum):
+    NEVER = "never"
+    ON_DATE = "on_date"
+    AFTER_OCCURRENCES = "after_occurrences"
 
+class Frequency(str, Enum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
 
+class Weekday(str, Enum):
+    MON = "mon"
+    TUE = "tue"
+    WED = "wed"
+    THU = "thu"
+    FRI = "fri"
+    SAT = "sat"
+    SUN = "sun"
 
-
+class RepeatType(str, Enum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+    CUSTOM = "custom"
 
 # ========== End Repeat ==========
 class EndRepeatNever(BaseModel):
-    mode: Literal["never"]
+    mode: EndRepeatMode = EndRepeatMode.NEVER
 
 class EndRepeatOnDate(BaseModel):
-    mode: Literal["on_date"]
+    mode: EndRepeatMode = EndRepeatMode.ON_DATE
     until: datetime
 
 class EndRepeatAfterOccurrences(BaseModel):
-    mode: Literal["after_occurrences"]
+    mode: EndRepeatMode = EndRepeatMode.AFTER_OCCURRENCES
     occurrences: int
 
 EndRepeat = Union[EndRepeatNever, EndRepeatOnDate, EndRepeatAfterOccurrences]
 
 # ========== Custom Repeats ==========
-
 class CustomDaily(BaseModel):
-    frequency: Literal["daily"]
+    frequency: Frequency = Frequency.DAILY
     interval: int = Field(..., gt=0, description="Every X days")
 
 class CustomWeekly(BaseModel):
-    frequency: Literal["weekly"]
+    frequency: Frequency = Frequency.WEEKLY
     interval: int = Field(..., gt=0, description="Every X weeks")
-    weekdays: List[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]]
+    weekdays: List[Weekday]
 
 class CustomMonthly(BaseModel):
-    frequency: Literal["monthly"]
+    frequency: Frequency = Frequency.MONTHLY
     interval: int = Field(..., gt=0, description="Every X months")
 
 CustomRepeat = Union[CustomDaily, CustomWeekly, CustomMonthly]
 
-# ========== Repeat Block ==========
-
+# ========== Repeat ==========
 class RepeatSimple(BaseModel):
-    type: Literal["daily", "weekly", "monthly", "yearly"]
+    type: RepeatType = RepeatType.DAILY
 
 class RepeatCustom(BaseModel):
-    type: Literal["custom"]
+    type: RepeatType = RepeatType.CUSTOM
     custom: CustomRepeat
 
 Repeat = Union[RepeatSimple, RepeatCustom]
 
 # ========== Main Scheduler Payload ==========
-
 class TaskSchedulePayload(BaseModel):
     task_id: str
     start_time: datetime
