@@ -1,7 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 from typing import Any, Dict
-from schema import (
+from features.schema import (
     TaskSchedulePayload,
     RepeatSimple,
     RepeatCustom,
@@ -131,9 +131,11 @@ def schedule_from_payload(payload: TaskSchedulePayload):
     print(f"Scheduling job {task_id} with trigger: {trigger}\n")
     print(f"Trigger args: {trigger_args}\n")
     print(f"Trigger: {trigger}\n")
-    scheduler.add_job(
+    
+    
+    return scheduler.add_job(
         func=task_runner,
-        trigger=trigger,  # Use the trigger object, not a cron string
+        trigger=trigger,
         id=task_id,
         name=task_id,
         args=args,
@@ -160,17 +162,17 @@ def schedule_from_payload(payload: TaskSchedulePayload):
 
 
 # 2. Daily repeat, never ends, with kwargs
-schedule_from_payload(
-    TaskSchedulePayload(
-        task_id="daily_never_end",
-        start_time=now + timedelta(seconds=3),
-        is_repeat=True,
-        repeat=RepeatSimple(type="daily"),
-        end_repeat=EndRepeatNever(mode="never"),
-        args=["daily at a time never ends."],
-        kwargs={"priority": "high", "send_copy": True}
-    )
-)
+# schedule_from_payload(
+#     TaskSchedulePayload(
+#         task_id="daily_never_end",
+#         start_time=now + timedelta(seconds=3),
+#         is_repeat=True,
+#         repeat=RepeatSimple(type="daily"),
+#         end_repeat=EndRepeatNever(mode="never"),
+#         args=["daily at a time never ends."],
+#         kwargs={"priority": "high", "send_copy": True}
+#     )
+# )
 
 
 # schedule_from_payload(
@@ -238,15 +240,15 @@ schedule_from_payload(
 
 
 
-scheduler.add_job(
-    func=task_runner,
-    trigger=CronTrigger(second="*"),
-    id="test_every_second",
-    name="test_every_second",
-    args=["test_every_second"],
-    kwargs={"demo": True},
-    replace_existing=True,
-)
+# scheduler.add_job(
+#     func=task_runner,
+#     trigger=CronTrigger(second="*"),
+#     id="test_every_second",
+#     name="test_every_second",
+#     args=["test_every_second"],
+#     kwargs={"demo": True},
+#     replace_existing=True,
+# )
 
 
 time.sleep(20)  # Keep script alive to allow jobs to runimport timedef schedule_test_cron_every_second():

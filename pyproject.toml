@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "apscheduler>=3.11.0",
+    "fastapi[standard]>=0.116.1",
     "pydantic>=2.11.7",
     "pytz>=2025.2",
     "schedule>=1.2.2",
+    "starlette>=0.47.1",
+    "uvicorn>=0.35.0",
 ]
