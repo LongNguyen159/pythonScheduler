@@ -2,7 +2,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from features.scheduler import schedule_from_payload, scheduler
 from features.schema import TaskSchedulePayload
-
+import json
+from typing import List
+from apscheduler.job import Job
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -14,7 +16,20 @@ class ScheduleRequest(BaseModel):
 def schedule_job(request: ScheduleRequest):
     try:
         job = schedule_from_payload(request.payload)
-        return {"job_id": job.id, "name": job.name, "next_run_time": job.next_run_time}
+        job_details = {
+            "id": job.id,
+            "name": job.name,
+            "func": str(job.func),
+            "args": job.args,
+            "kwargs": job.kwargs,
+            "coalesce": job.coalesce,
+            "trigger": str(job.trigger),
+            "executor": job.executor,
+            "misfire_grace_time": job.misfire_grace_time,
+            "max_instances": job.max_instances,
+            "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
+        }
+        return {"job_details": job_details}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -32,7 +47,30 @@ def cancel_job(job_id: str):
 @app.get("/jobs")
 def list_jobs():
     try:
-        jobs = scheduler.get_jobs()
-        return [{"job_id": job.id, "name": job.name, "next_run_time": job.next_run_time} for job in jobs]
+        jobs: List[Job] = scheduler.get_jobs()
+        jobs_list = [
+            {
+                "id": job.id,
+                "name": job.name,
+                "func": str(job.func),
+                "args": job.args,
+                "kwargs": job.kwargs,
+                "coalesce": job.coalesce,
+                "trigger": str(job.trigger),
+                "executor": job.executor,
+                "misfire_grace_time": job.misfire_grace_time,
+                "max_instances": job.max_instances,
+                "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
+            }
+            for job in jobs
+        ]
+        return {"jobs": jobs_list}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+@app.delete("/remove-all-jobs")
+def remove_all_jobs():
+    try:
+        scheduler.remove_all_jobs()
+        return {"message": "All jobs removed successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
