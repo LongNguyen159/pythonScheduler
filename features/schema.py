@@ -5,6 +5,7 @@ from enum import Enum
 
 # ========== Enums ==========
 class RepeatType(str, Enum):
+    MINUTELY = "minutely"
     HOURLY = "hourly"
     DAILY = "daily"
     WEEKLY = "weekly"
