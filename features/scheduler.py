@@ -6,13 +6,18 @@ from features.schema import (
     TaskSchedulePayload,
     EndRepeatMode,
     RepeatType,
-    JobResponse
+    Repeat,
+    EndRepeat,
+    JobResponse,
+    PayloadType,
+    SimpleScheduleConfig,
+    ExpertScheduleConfig
 )
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.calendarinterval import CalendarIntervalTrigger
-from typing import List
+from typing import List, cast
 import pytz
 
 class SchedulerService:
@@ -31,24 +36,180 @@ class SchedulerService:
             dt = dt.replace(tzinfo=pytz.UTC)
         return dt.astimezone(pytz.UTC)
 
-    def run_scheduler(self, payload: TaskSchedulePayload) -> Job:
+    def run_scheduler(self, payload: TaskSchedulePayload):
         task_id: str = payload.task_id
-        start_time: datetime = self.to_utc(payload.start_time)
-        repeat = payload.repeat
-        end_repeat = payload.end_repeat
+        schedule_config: SimpleScheduleConfig | ExpertScheduleConfig = payload.task_config
         args = getattr(payload, "args", [])
         kwargs = getattr(payload, "kwargs", {})
 
-        # Apply end repeat if provided
-        end_date = None
-        if end_repeat:
-            if end_repeat.mode == EndRepeatMode.ON_DATE and end_repeat.until:
-                end_date = self.to_utc(end_repeat.until)
 
-        # One-time job
-        if not repeat:
-            trigger = DateTrigger(run_date=start_time)
-            print(f"Scheduling one-time job {task_id} with trigger: {trigger}\n")
+        if schedule_config.mode == PayloadType.EXPERT:
+            ''' Expert mode: CRON string scheduling '''
+            expert_config = cast(ExpertScheduleConfig, schedule_config)
+            try:
+
+                trigger = CronTrigger.from_crontab(expert_config.cron_string, timezone=pytz.UTC)
+                print(f"Scheduling expert-mode CRON job {task_id} with trigger: {trigger}")
+                return self.scheduler.add_job(
+                    func=self.task_runner,
+                    trigger=trigger,
+                    id=task_id,
+                    name=task_id,
+                    args=args,
+                    kwargs=kwargs,
+                    replace_existing=True,
+                )
+            except ValueError as e:
+                raise ValueError(f"Invalid CRON string: {str(e)}")
+
+        elif schedule_config.mode == PayloadType.SIMPLE:
+            ''' Simple mode: Time-based scheduling with triggers and repeat logic '''
+            simple_config = cast(SimpleScheduleConfig, schedule_config)
+            start_time: datetime = self.to_utc(simple_config.start_time)
+            repeat: Repeat | None = simple_config.repeat
+            end_repeat: EndRepeat | None = simple_config.end_repeat
+
+
+            # Apply end repeat if provided
+            end_date: datetime | None = None
+            if end_repeat:
+                if end_repeat.mode == EndRepeatMode.ON_DATE and end_repeat.until:
+                    end_date = self.to_utc(end_repeat.until)
+    
+
+            # One-time job
+            if not repeat:
+                trigger = DateTrigger(run_date=start_time)
+                print(f"Scheduling one-time job {task_id} with trigger: {trigger}\n")
+                return self.scheduler.add_job(
+                    func=self.task_runner,
+                    trigger=trigger,
+                    id=task_id,
+                    name=task_id,
+                    args=args,
+                    kwargs=kwargs,
+                    replace_existing=True,
+                )
+
+            #region Triggers generators
+            '''
+            Generate the appropriate trigger based on repeat type:
+                IntervalTrigger: Use when time frame is smaller than a day (minute, hour). Repeat from start_time + interval.
+                CalendarIntervalTrigger: Use when time frame is larger than a day to ensure correct calendar behaviour and avoid time drift.
+                CronTrigger: Use for complex schedules (e.g., every Monday and Thursday).
+                DateTrigger: Use for one-time jobs.
+            '''
+            def minutely_trigger():
+                return IntervalTrigger(
+                    minutes=repeat.frequency or 1,
+                    start_date=start_time,
+                    end_date=end_date,
+                    timezone=pytz.UTC
+                )
+
+            def hourly_trigger():
+                return IntervalTrigger(
+                    hours=repeat.frequency or 1,
+                    start_date=start_time,
+                    end_date=end_date,
+                    timezone=pytz.UTC
+                )
+
+            def daily_trigger():
+                return CalendarIntervalTrigger(
+                    days=repeat.frequency or 1,
+                    start_date=start_time,
+                    end_date=end_date,
+                    timezone=pytz.UTC,
+                    hour=start_time.hour,
+                    minute=start_time.minute,
+                    second=start_time.second,
+                )
+
+            def weekly_trigger():
+                """
+                Creates a weekly trigger.
+
+                - If `repeat.on_weekdays` is provided and frequency == 1 (repeat every week on specific weekdays):
+                    → use CronTrigger (e.g. every week on Mon, Thu)
+
+                - If frequency > 1 (repeat every X weeks, does not support multiple weekdays):
+                    → use CalendarIntervalTrigger & reject if multiple weekdays are requested (not supported in this mode)
+                    
+                """
+                weekdays = repeat.on_weekdays or []
+                use_cron = weekdays and (repeat.frequency == 1)
+
+                if use_cron:
+                    day_of_week_expr = ",".join(weekdays)
+                    return CronTrigger(
+                        day_of_week=day_of_week_expr,
+                        hour=start_time.hour,
+                        minute=start_time.minute,
+                        second=start_time.second,
+                        start_date=start_time,
+                        end_date=end_date,
+                        timezone=pytz.UTC,
+                    )
+
+                if weekdays and (repeat.frequency or 1) > 1:
+                    raise ValueError(
+                        "Cannot schedule 'every X weeks on multiple weekdays'. "
+                        "Please create a separate job for each weekday."
+                    )
+
+                return CalendarIntervalTrigger(
+                    weeks=repeat.frequency or 1,
+                    start_date=start_time,
+                    end_date=end_date,
+                    hour=start_time.hour,
+                    minute=start_time.minute,
+                    second=start_time.second,
+                    timezone=pytz.UTC,
+                )
+
+            def monthly_trigger():
+                days = repeat.on_days or [start_time.day]
+                day_expr = ",".join(map(str, days))
+                return CronTrigger(
+                    month=f"*/{repeat.frequency or 1}",
+                    day=day_expr,
+                    hour=start_time.hour,
+                    minute=start_time.minute,
+                    second=start_time.second,
+                    start_date=start_time,
+                    end_date=end_date,
+                    timezone=pytz.UTC,
+                )
+
+            def yearly_trigger():
+                return CronTrigger(
+                    month=start_time.month,
+                    day=start_time.day,
+                    hour=start_time.hour,
+                    minute=start_time.minute,
+                    second=start_time.second,
+                    start_date=start_time,
+                    end_date=end_date,
+                    timezone=pytz.UTC,
+                )
+            
+            trigger_map = {
+                RepeatType.MINUTELY: minutely_trigger,
+                RepeatType.HOURLY: hourly_trigger,
+                RepeatType.DAILY: daily_trigger,
+                RepeatType.WEEKLY: weekly_trigger
+            }
+
+            trigger_func = trigger_map.get(repeat.type)
+            if not trigger_func:
+                raise ValueError("Invalid repeat type")
+
+            trigger = trigger_func()
+            #endregion
+
+
+            print(f"Scheduling job {task_id} with trigger: {trigger}\n")
             return self.scheduler.add_job(
                 func=self.task_runner,
                 trigger=trigger,
@@ -58,132 +219,6 @@ class SchedulerService:
                 kwargs=kwargs,
                 replace_existing=True,
             )
-
-        # --------- Repeat trigger generators ---------
-        '''
-            IntervalTrigger: Use when time frame is smaller than a day (minute, hour). Repeat from start_time + interval.
-            CalendarIntervalTrigger: Use when time frame is larger than a day to ensure correct calendar behaviour and avoid time drift.
-            CronTrigger: Use for complex schedules (e.g., every Monday and Thursday).
-            DateTrigger: Use for one-time jobs.
-        '''
-        def minutely_trigger():
-            return IntervalTrigger(
-                minutes=repeat.frequency or 1,
-                start_date=start_time,
-                end_date=end_date,
-                timezone=pytz.UTC
-            )
-
-        def hourly_trigger():
-            return IntervalTrigger(
-                hours=repeat.frequency or 1,
-                start_date=start_time,
-                end_date=end_date,
-                timezone=pytz.UTC
-            )
-
-        def daily_trigger():
-            return CalendarIntervalTrigger(
-                days=repeat.frequency or 1,
-                start_date=start_time,
-                end_date=end_date,
-                timezone=pytz.UTC,
-                hour=start_time.hour,
-                minute=start_time.minute,
-                second=start_time.second,
-            )
-
-        def weekly_trigger():
-            """
-            Creates a weekly trigger.
-
-            - If `repeat.on_weekdays` is provided and frequency == 1 (repeat every week on specific weekdays):
-                → use CronTrigger (e.g. every week on Mon, Thu)
-
-            - If frequency > 1 (repeat every X weeks, does not support multiple weekdays):
-                → use CalendarIntervalTrigger & reject if multiple weekdays are requested (not supported in this mode)
-                
-            """
-            weekdays = repeat.on_weekdays or []
-            use_cron = weekdays and (repeat.frequency == 1)
-
-            if use_cron:
-                day_of_week_expr = ",".join(weekdays)
-                return CronTrigger(
-                    day_of_week=day_of_week_expr,
-                    hour=start_time.hour,
-                    minute=start_time.minute,
-                    second=start_time.second,
-                    start_date=start_time,
-                    end_date=end_date,
-                    timezone=pytz.UTC,
-                )
-
-            if weekdays and (repeat.frequency or 1) > 1:
-                raise ValueError(
-                    "Cannot schedule 'every X weeks on multiple weekdays'. "
-                    "Please create a separate job for each weekday."
-                )
-
-            return CalendarIntervalTrigger(
-                weeks=repeat.frequency or 1,
-                start_date=start_time,
-                end_date=end_date,
-                hour=start_time.hour,
-                minute=start_time.minute,
-                second=start_time.second,
-                timezone=pytz.UTC,
-            )
-
-        def monthly_trigger():
-            days = repeat.on_days or [start_time.day]
-            day_expr = ",".join(map(str, days))
-            return CronTrigger(
-                month=f"*/{repeat.frequency or 1}",
-                day=day_expr,
-                hour=start_time.hour,
-                minute=start_time.minute,
-                second=start_time.second,
-                start_date=start_time,
-                end_date=end_date,
-                timezone=pytz.UTC,
-            )
-
-        def yearly_trigger():
-            return CronTrigger(
-                month=start_time.month,
-                day=start_time.day,
-                hour=start_time.hour,
-                minute=start_time.minute,
-                second=start_time.second,
-                start_date=start_time,
-                end_date=end_date,
-                timezone=pytz.UTC,
-            )
-
-        trigger_map = {
-            RepeatType.MINUTELY: minutely_trigger,
-            RepeatType.HOURLY: hourly_trigger,
-            RepeatType.DAILY: daily_trigger,
-            RepeatType.WEEKLY: weekly_trigger
-        }
-
-        trigger_func = trigger_map.get(repeat.type)
-        if not trigger_func:
-            raise ValueError("Invalid repeat type")
-
-        trigger = trigger_func()
-
-        print(f"Scheduling job {task_id} with trigger: {trigger}\n")
-        return self.scheduler.add_job(
-            func=self.task_runner,
-            trigger=trigger,
-            id=task_id,
-            name=task_id,
-            args=args,
-            kwargs=kwargs,
-            replace_existing=True,
-        )
 
     def cancel_job(self, job_id: str):
         job = self.scheduler.get_job(job_id)

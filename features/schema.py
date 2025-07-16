@@ -1,10 +1,14 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union, Annotated, Literal
 from datetime import datetime
 from enum import Enum
 
 #region Enums
 # ========== Enums ==========
+
+class PayloadType(str, Enum):
+    SIMPLE = "simple"
+    EXPERT = "expert"
 class RepeatType(str, Enum):
     MINUTELY = "minutely"
     HOURLY = "hourly"
@@ -45,26 +49,42 @@ class Repeat(BaseModel):
 
 
 #region Payload
-# ========== Main Scheduler Payload ==========
-class TaskSchedulePayload(BaseModel):
-    task_id: str
+class SimpleScheduleConfig(BaseModel):
+    mode: Literal[PayloadType.SIMPLE] = PayloadType.SIMPLE
     start_time: datetime
-    repeat: Optional[Repeat] = None  # Optional for one-time jobs
-    end_repeat: Optional[EndRepeat] = None  # Optional for one-time jobs
-    args: Optional[List[Any]] = []
-    kwargs: Optional[Dict[str, Any]] = {}
+    end_time: datetime
+    repeat: Optional[Repeat] = None
+    end_repeat: Optional[EndRepeat] = None
 
     @model_validator(mode="after")
     def validate_repeat_logic(self):
         if self.repeat:
             if self.repeat.type == RepeatType.WEEKLY and self.repeat.on_weekdays is not None and not self.repeat.on_weekdays:
-                raise ValueError("`on_weekdays` must not be empty if provided for `repeat.type` WEEKLY.")
+                raise ValueError("`on_weekdays` must not be empty for weekly repeat.")
             if self.repeat.type == RepeatType.MONTHLY and self.repeat.on_days is not None and not self.repeat.on_days:
-                raise ValueError("`on_days` must not be empty if provided for `repeat.type` MONTHLY.")
+                raise ValueError("`on_days` must not be empty for monthly repeat.")
         if self.end_repeat and self.end_repeat.mode == EndRepeatMode.ON_DATE and not self.end_repeat.until:
-            raise ValueError("`until` must be provided if `end_repeat.mode` is ON_DATE.")
+            raise ValueError("`until` must be provided for end_repeat ON_DATE.")
         return self
-    
+
+
+class ExpertScheduleConfig(BaseModel):
+    mode: Literal[PayloadType.EXPERT] = PayloadType.EXPERT
+    cron_string: str  # CRON string for expert mode
+
+    @model_validator(mode="after")
+    def validate_cron_string(self):
+        if not self.cron_string:
+            raise ValueError("CRON string must be provided in expert mode.")
+        return self
+
+
+# ========== Main Scheduler Payload ==========
+class TaskSchedulePayload(BaseModel):
+    task_id: str
+    task_config: Annotated[Union[SimpleScheduleConfig, ExpertScheduleConfig], Field(discriminator="mode")]
+    args: Optional[List[Any]] = []
+    kwargs: Optional[Dict[str, Any]] = {}
 
 
 class JobResponse(BaseModel):

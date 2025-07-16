@@ -7,11 +7,16 @@ from apscheduler.job import Job
 app = FastAPI()
 scheduler_service = SchedulerService()
 
+'''
+    TODO: Optional 'expert mode': Accept in a CRON string to schedule jobs.
+'''
 
 @app.post("/schedule")
 def schedule_job(request: TaskSchedulePayload):
     try:
         job = scheduler_service.run_scheduler(request)
+        if not job:
+            raise HTTPException(status_code=400, detail="Failed to schedule job.")
         job_details = {
             "id": job.id,
             "name": job.name,
