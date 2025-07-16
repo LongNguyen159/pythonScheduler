@@ -1,8 +1,6 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from features.scheduler import scheduler, run_scheduler
 from features.schema import TaskSchedulePayload
-import json
 from typing import List
 from apscheduler.job import Job
 # Initialize FastAPI app
@@ -27,7 +25,7 @@ def schedule_job(request: TaskSchedulePayload):
             "max_instances": job.max_instances,
             "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
         }
-        return {"job_details": job_details}
+        return job_details
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -62,7 +60,7 @@ def list_jobs():
             }
             for job in jobs
         ]
-        return {"jobs": jobs_list}
+        return jobs_list
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 @app.delete("/remove-all-jobs")
