@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from features.scheduler import schedule_from_payload, scheduler
+from features.scheduler import scheduler, run_scheduler
 from features.schema import TaskSchedulePayload
 import json
 from typing import List
@@ -9,13 +9,11 @@ from apscheduler.job import Job
 app = FastAPI()
 
 # Define Pydantic model for request payload
-class ScheduleRequest(BaseModel):
-    payload: TaskSchedulePayload
 
 @app.post("/schedule")
-def schedule_job(request: ScheduleRequest):
+def schedule_job(request: TaskSchedulePayload):
     try:
-        job = schedule_from_payload(request.payload)
+        job = run_scheduler(request)
         job_details = {
             "id": job.id,
             "name": job.name,

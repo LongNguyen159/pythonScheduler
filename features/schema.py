@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+#region Enums
 # ========== Enums ==========
 class RepeatType(str, Enum):
     MINUTELY = "minutely"
@@ -25,6 +26,9 @@ class Weekday(str, Enum):
     SAT = "sat"
     SUN = "sun"
 
+#endregion
+
+#region Repeat
 # ========== End Repeat ==========
 class EndRepeat(BaseModel):
     mode: EndRepeatMode
@@ -37,6 +41,10 @@ class Repeat(BaseModel):
     on_weekdays: Optional[List[Weekday]] = None  # For weekly repeats
     on_days: Optional[List[int]] = None  # For monthly repeats
 
+#endregion
+
+
+#region Payload
 # ========== Main Scheduler Payload ==========
 class TaskSchedulePayload(BaseModel):
     task_id: str
@@ -56,3 +64,4 @@ class TaskSchedulePayload(BaseModel):
         if self.end_repeat and self.end_repeat.mode == EndRepeatMode.ON_DATE and not self.end_repeat.until:
             raise ValueError("`until` must be provided if `end_repeat.mode` is ON_DATE.")
         return self
+#endregion

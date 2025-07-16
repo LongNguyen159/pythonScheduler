@@ -1,7 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.job import Job
-from datetime import datetime, timedelta
-from typing import Any, Dict, Union, Optional
+from datetime import datetime
 from features.schema import (
     TaskSchedulePayload,
     EndRepeatMode,
@@ -10,7 +9,6 @@ from features.schema import (
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
-from apscheduler.triggers.combining import AndTrigger
 from apscheduler.triggers.calendarinterval import CalendarIntervalTrigger
 import pytz
 
@@ -22,17 +20,17 @@ def task_runner(*args, **kwargs):
     print("Task executed! Arguments: ", args, kwargs)
 
 
-def schedule_from_payload(payload: TaskSchedulePayload) -> Job:
+def to_utc(dt: datetime) -> datetime:
+    '''Convert a datetime to UTC timezone.'''
+    if isinstance(dt, str):
+        dt = datetime.fromisoformat(dt)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=pytz.UTC)
+    return dt.astimezone(pytz.UTC)
+
+
+def run_scheduler(payload: TaskSchedulePayload) -> Job:
     task_id: str = payload.task_id
-
-    # Always use UTC
-    def to_utc(dt: datetime) -> datetime:
-        if isinstance(dt, str):
-            dt = datetime.fromisoformat(dt)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=pytz.UTC)
-        return dt.astimezone(pytz.UTC)
-
     start_time: datetime = to_utc(payload.start_time)
     repeat = payload.repeat
     end_repeat = payload.end_repeat
