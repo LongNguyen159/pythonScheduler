@@ -5,11 +5,13 @@ from features.schema import (
     TaskSchedulePayload,
     EndRepeatMode,
     RepeatType,
+    JobResponse
 )
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.calendarinterval import CalendarIntervalTrigger
+from typing import List
 import pytz
 
 scheduler = BackgroundScheduler()
@@ -197,3 +199,48 @@ def run_scheduler(payload: TaskSchedulePayload) -> Job:
         kwargs=kwargs,
         replace_existing=True,
     )
+
+
+def cancel_job(job_id: str):
+    job = scheduler.get_job(job_id)
+    if not job:
+        raise Exception("Job not found")
+    try:
+        scheduler.remove_job(job_id)
+    except Exception as e:
+        raise Exception(f"Scheduler failure: {str(e)}")
+    return {"message": f"Job {job_id} canceled successfully"}
+
+
+def get_all_jobs() -> List[JobResponse]:
+    """
+    Returns a list of all scheduled jobs.
+    """
+    jobs: List[Job] = scheduler.get_jobs()
+
+    jobs_list: List[JobResponse] = [
+        JobResponse(
+            id=job.id,
+            name=job.name,
+            func=str(job.func),
+            args=job.args,
+            kwargs=job.kwargs,
+            coalesce=job.coalesce,
+            trigger=str(job.trigger),
+            executor=job.executor,
+            misfire_grace_time=job.misfire_grace_time,
+            max_instances=job.max_instances,
+            next_run_time=job.next_run_time.isoformat() if job.next_run_time else None
+        )
+        for job in jobs
+    ]
+    return jobs_list
+
+
+
+def remove_all_jobs():
+    try:
+        scheduler.remove_all_jobs()
+        return {"message": "All jobs removed successfully."}
+    except Exception as e:
+        raise Exception(f"Scheduler failure: {str(e)}")

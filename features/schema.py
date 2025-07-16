@@ -64,4 +64,19 @@ class TaskSchedulePayload(BaseModel):
         if self.end_repeat and self.end_repeat.mode == EndRepeatMode.ON_DATE and not self.end_repeat.until:
             raise ValueError("`until` must be provided if `end_repeat.mode` is ON_DATE.")
         return self
+    
+
+
+class JobResponse(BaseModel):
+    id: str
+    name: str
+    func: str
+    args: List[Any]
+    kwargs: Dict[str, Any]
+    coalesce: bool
+    trigger: str
+    executor: str
+    misfire_grace_time: Optional[int] = None
+    max_instances: int
+    next_run_time: Optional[str] = None  # ISO format string or None
 #endregion
