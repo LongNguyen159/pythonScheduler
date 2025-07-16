@@ -34,12 +34,12 @@ def schedule_from_payload(payload: TaskSchedulePayload) -> Job:
         return dt.astimezone(pytz.UTC)
 
     start_time: datetime = to_utc(payload.start_time)
+    repeat = payload.repeat
+    end_repeat = payload.end_repeat
     args = getattr(payload, "args", [])
     kwargs = getattr(payload, "kwargs", {})
 
-    repeat = payload.repeat
-    end_repeat = payload.end_repeat
-
+    # Apply end repeat if provided
     end_date = None
     if end_repeat:
         if end_repeat.mode == EndRepeatMode.ON_DATE and end_repeat.until:
@@ -60,15 +60,26 @@ def schedule_from_payload(payload: TaskSchedulePayload) -> Job:
         )
 
     # --------- Repeat trigger generators ---------
-
-    def hourly_trigger():
-        return CalendarIntervalTrigger(
-            hour=repeat.frequency or 1,
+    '''
+        IntervalTrigger: Use when time frame is smaller than a day (minute, hour). Repeat from start_time + interval.
+        CalendarIntervalTrigger: Use when time frame is larger than a day to ensure correct calendar behaviour and avoid time drift.
+        CronTrigger: Use for complex schedules (e.g., every Monday and Thursday).
+        DateTrigger: Use for one-time jobs.
+    '''
+    def minutely_trigger():
+        return IntervalTrigger(
+            minutes=repeat.frequency or 1,
             start_date=start_time,
             end_date=end_date,
-            timezone=pytz.UTC,
-            minute=start_time.minute,
-            second=start_time.second,
+            timezone=pytz.UTC
+        )
+
+    def hourly_trigger():
+        return IntervalTrigger(
+            hours=repeat.frequency or 1,
+            start_date=start_time,
+            end_date=end_date,
+            timezone=pytz.UTC
         )
 
     def daily_trigger():
@@ -83,14 +94,48 @@ def schedule_from_payload(payload: TaskSchedulePayload) -> Job:
         )
 
     def weekly_trigger():
+        """
+        Creates a weekly trigger.
+
+        - If `repeat.on_weekdays` is provided and frequency == 1 (repeat every week on specific weekdays):
+            → use CronTrigger (e.g. every week on Mon, Thu)
+
+        - If frequency > 1 (repeat every X weeks, does not support multiple weekdays):
+            → use CalendarIntervalTrigger & reject if multiple weekdays are requested (not supported in this mode)
+            
+        """
+        weekdays = repeat.on_weekdays or []
+        use_cron = weekdays and (repeat.frequency == 1)
+
+        if use_cron:
+            # APScheduler CronTrigger accepts comma-separated string of "mon,tue,wed"
+            day_of_week_expr = ",".join(weekdays)
+
+            return CronTrigger(
+                day_of_week=day_of_week_expr,
+                hour=start_time.hour,
+                minute=start_time.minute,
+                second=start_time.second,
+                start_date=start_time,
+                end_date=end_date,
+                timezone=pytz.UTC,
+            )
+
+        if weekdays and (repeat.frequency or 1) > 1:
+            raise ValueError(
+                "Cannot schedule 'every X weeks on multiple weekdays'. "
+                "Please create a separate job for each weekday."
+            )
+
+        # If no weekdays: repeat every X weeks from start_time
         return CalendarIntervalTrigger(
             weeks=repeat.frequency or 1,
             start_date=start_time,
             end_date=end_date,
-            timezone=pytz.UTC,
             hour=start_time.hour,
             minute=start_time.minute,
             second=start_time.second,
+            timezone=pytz.UTC,
         )
 
     #region unused Triggers
@@ -130,14 +175,12 @@ def schedule_from_payload(payload: TaskSchedulePayload) -> Job:
     #endregion
 
 
-    # --------- Trigger selection and job registration ---------
-
+    # --------- Trigger selection and job registration --------- #
     trigger_map = {
+        RepeatType.MINUTELY: minutely_trigger,
         RepeatType.HOURLY: hourly_trigger,
         RepeatType.DAILY: daily_trigger,
-        RepeatType.WEEKLY: weekly_trigger,
-        # RepeatType.MONTHLY: monthly_trigger,
-        # RepeatType.YEARLY: yearly_trigger,
+        RepeatType.WEEKLY: weekly_trigger
     }
 
     trigger_func = trigger_map.get(repeat.type)
