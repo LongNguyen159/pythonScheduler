@@ -7,10 +7,6 @@ from apscheduler.job import Job
 app = FastAPI()
 scheduler_service = SchedulerService()
 
-'''
-    TODO: Optional 'expert mode': Accept in a CRON string to schedule jobs.
-'''
-
 def test():
     print("Test job executed successfully!")
     return "Test successful!"
