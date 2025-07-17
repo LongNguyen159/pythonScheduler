@@ -3,21 +3,21 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.job import Job
 from datetime import datetime
 from features.schema import (
-    TaskSchedulePayload,
+    TaskExecutionSettings,
     EndRepeatMode,
     RepeatType,
     Repeat,
     EndRepeat,
     JobResponse,
     PayloadType,
-    SimpleScheduleConfig,
-    ExpertScheduleConfig
+    SimpleConfig,
+    ExpertConfig
 )
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.calendarinterval import CalendarIntervalTrigger
-from typing import List, cast
+from typing import List, cast, Optional, Any, Dict
 import pytz
 
 class SchedulerService:
@@ -25,36 +25,31 @@ class SchedulerService:
         self.scheduler = BackgroundScheduler()
         self.scheduler.start()
 
-    def task_runner(self, *args, **kwargs):
-        print("Task executed! Arguments: ", args, kwargs)
-
     def to_utc(self, dt: datetime) -> datetime:
-        '''Convert a datetime to UTC timezone.'''
+        '''Helper function: Convert a datetime to UTC timezone.'''
         if isinstance(dt, str):
             dt = datetime.fromisoformat(dt)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=pytz.UTC)
         return dt.astimezone(pytz.UTC)
 
-    def run_scheduler(self, payload: TaskSchedulePayload):
+    def schedule_job(self, payload: TaskExecutionSettings, task_to_execute_callback: Any, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> Job | None:
         task_id: str = payload.task_id
-        schedule_config: SimpleScheduleConfig | ExpertScheduleConfig = payload.task_config
-        args = getattr(payload, "args", [])
-        kwargs = getattr(payload, "kwargs", {})
-
+        task_name: Optional[str] = payload.task_name
+        schedule_config: SimpleConfig | ExpertConfig = payload.task_config
 
         if schedule_config.mode == PayloadType.EXPERT:
             ''' Expert mode: CRON string scheduling '''
-            expert_config = cast(ExpertScheduleConfig, schedule_config)
+            expert_config = cast(ExpertConfig, schedule_config)
             try:
 
                 trigger = CronTrigger.from_crontab(expert_config.cron_string, timezone=pytz.UTC)
                 print(f"Scheduling expert-mode CRON job {task_id} with trigger: {trigger}")
                 return self.scheduler.add_job(
-                    func=self.task_runner,
+                    func=task_to_execute_callback,
                     trigger=trigger,
                     id=task_id,
-                    name=task_id,
+                    name=task_name,
                     args=args,
                     kwargs=kwargs,
                     replace_existing=True,
@@ -64,7 +59,7 @@ class SchedulerService:
 
         elif schedule_config.mode == PayloadType.SIMPLE:
             ''' Simple mode: Time-based scheduling with triggers and repeat logic '''
-            simple_config = cast(SimpleScheduleConfig, schedule_config)
+            simple_config = cast(SimpleConfig, schedule_config)
             start_time: datetime = self.to_utc(simple_config.start_time)
             repeat: Repeat | None = simple_config.repeat
             end_repeat: EndRepeat | None = simple_config.end_repeat
@@ -82,10 +77,10 @@ class SchedulerService:
                 trigger = DateTrigger(run_date=start_time)
                 print(f"Scheduling one-time job {task_id} with trigger: {trigger}\n")
                 return self.scheduler.add_job(
-                    func=self.task_runner,
+                    func=task_to_execute_callback,
                     trigger=trigger,
                     id=task_id,
-                    name=task_id,
+                    name=task_name,
                     args=args,
                     kwargs=kwargs,
                     replace_existing=True,
@@ -211,10 +206,10 @@ class SchedulerService:
 
             print(f"Scheduling job {task_id} with trigger: {trigger}\n")
             return self.scheduler.add_job(
-                func=self.task_runner,
+                func=task_to_execute_callback,
                 trigger=trigger,
                 id=task_id,
-                name=task_id,
+                name=task_name,
                 args=args,
                 kwargs=kwargs,
                 replace_existing=True,
@@ -250,6 +245,26 @@ class SchedulerService:
         ]
         return jobs_list
 
+
+    def get_job_by_id(self, job_id: str) -> JobResponse:
+        job: Job | None = self.scheduler.get_job(job_id)
+        if not job:
+            raise Exception("Job not found")
+        
+        return JobResponse(
+            id=job.id,
+            name=job.name,
+            func=str(job.func),
+            args=job.args,
+            kwargs=job.kwargs,
+            coalesce=job.coalesce,
+            trigger=str(job.trigger),
+            executor=job.executor,
+            misfire_grace_time=job.misfire_grace_time,
+            max_instances=job.max_instances,
+            next_run_time=job.next_run_time.isoformat() if job.next_run_time else None
+        )
+    
     def remove_all_jobs(self):
         try:
             self.scheduler.remove_all_jobs()

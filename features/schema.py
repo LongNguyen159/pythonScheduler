@@ -49,7 +49,7 @@ class Repeat(BaseModel):
 
 
 #region Payload
-class SimpleScheduleConfig(BaseModel):
+class SimpleConfig(BaseModel):
     mode: Literal[PayloadType.SIMPLE] = PayloadType.SIMPLE
     start_time: datetime
     end_time: datetime
@@ -68,7 +68,7 @@ class SimpleScheduleConfig(BaseModel):
         return self
 
 
-class ExpertScheduleConfig(BaseModel):
+class ExpertConfig(BaseModel):
     mode: Literal[PayloadType.EXPERT] = PayloadType.EXPERT
     cron_string: str  # CRON string for expert mode
 
@@ -80,11 +80,10 @@ class ExpertScheduleConfig(BaseModel):
 
 
 # ========== Main Scheduler Payload ==========
-class TaskSchedulePayload(BaseModel):
+class TaskExecutionSettings(BaseModel):
     task_id: str
-    task_config: Annotated[Union[SimpleScheduleConfig, ExpertScheduleConfig], Field(discriminator="mode")]
-    args: Optional[List[Any]] = []
-    kwargs: Optional[Dict[str, Any]] = {}
+    task_name: Optional[str] = None  # Optional task name
+    task_config: Annotated[Union[SimpleConfig, ExpertConfig], Field(discriminator="mode")]
 
 
 class JobResponse(BaseModel):
