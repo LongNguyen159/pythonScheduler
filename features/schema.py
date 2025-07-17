@@ -80,8 +80,10 @@ class ExpertConfig(BaseModel):
 
 
 # ========== Main Scheduler Payload ==========
+
+import uuid
 class TaskExecutionSettings(BaseModel):
-    task_id: str
+    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     task_name: Optional[str] = None  # Optional task name
     task_config: Annotated[Union[SimpleConfig, ExpertConfig], Field(discriminator="mode")]
 
