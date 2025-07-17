@@ -33,7 +33,7 @@ class SchedulerService:
             dt = dt.replace(tzinfo=pytz.UTC)
         return dt.astimezone(pytz.UTC)
 
-    def schedule_job(self, payload: TaskExecutionSettings, task_to_execute_callback: Any, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> Job | None:
+    def _schedule_job(self, payload: TaskExecutionSettings, task_to_execute_callback: Any, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> Job | None:
         task_id: str = payload.task_id
         task_name: Optional[str] = payload.task_name
         schedule_config: SimpleConfig | ExpertConfig = payload.task_config
@@ -215,7 +215,13 @@ class SchedulerService:
                 replace_existing=True,
             )
 
+
+    #region Public methods
+    '''
+        API methods for scheduling, canceling, and listing jobs.
+    '''
     def cancel_job(self, job_id: str):
+        '''Cancel a job by its ID. This will remove all future executions of the job.'''
         job = self.scheduler.get_job(job_id)
         if not job:
             raise Exception("Job not found")
@@ -226,6 +232,9 @@ class SchedulerService:
         return {"message": f"Job {job_id} canceled successfully"}
 
     def get_all_jobs(self) -> List[JobResponse]:
+        '''
+            List all scheduled jobs: their IDs, names, next run times, etc.
+        '''
         jobs: List[Job] = self.scheduler.get_jobs()
         jobs_list: List[JobResponse] = [
             JobResponse(
@@ -245,8 +254,11 @@ class SchedulerService:
         ]
         return jobs_list
 
-
     def get_job_by_id(self, job_id: str) -> JobResponse:
+        '''
+            Get details of a specific job by its ID.
+            Returns job details including ID, name, next run time, etc.
+        '''
         job: Job | None = self.scheduler.get_job(job_id)
         if not job:
             raise Exception("Job not found")
@@ -266,8 +278,54 @@ class SchedulerService:
         )
     
     def remove_all_jobs(self):
+        '''
+            Remove all jobs from the scheduler. No more jobs will be executed after this.
+        '''
         try:
             self.scheduler.remove_all_jobs()
             return {"message": "All jobs removed successfully."}
         except Exception as e:
             raise Exception(f"Scheduler failure: {str(e)}")
+        
+
+    def schedule_job(self, task_configs: TaskExecutionSettings, callback: Any | None = None, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> JobResponse | None:
+        '''
+            Schedule a job based on the provided TaskExecutionSettings.
+            Parameters:
+                - task_configs: `TaskExecutionSettings` containing task ID, name, and configuration.
+                    - Configuration mode: `SimpleConfig` or `ExpertConfig`.
+                    - `SimpleConfig`: Contains start_time, end_time, repeat configurations.
+                    - `ExpertConfig`: Contains a CRON string for scheduling.
+
+                - callback: Optional callback function to execute when the job runs.
+                - args: Optional arguments to pass to the callback function.
+                - kwargs: Optional keyword arguments to pass to the callback function.
+
+
+
+            Returns a JobResponse type with job details.
+        '''
+        try:
+            job = self._schedule_job(task_configs, task_to_execute_callback=callback, args=args, kwargs=kwargs)
+            if not job:
+                raise Exception("Failed to schedule job: Job not found.")
+            
+            # Convert job to response format
+            job_details = JobResponse(
+                id=job.id,
+                name=job.name,
+                func=str(job.func),
+                args=job.args,
+                kwargs=job.kwargs,
+                coalesce=job.coalesce,
+                trigger=str(job.trigger),
+                executor=job.executor,
+                misfire_grace_time=job.misfire_grace_time,
+                max_instances=job.max_instances,
+                next_run_time=job.next_run_time.isoformat() if job.next_run_time else None
+            )
+            return job_details
+        except Exception as e:
+            raise Exception(f"Failed to schedule job: {str(e)}")
+    #endregion
+        

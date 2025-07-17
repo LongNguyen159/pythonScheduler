@@ -18,23 +18,8 @@ def test():
 @app.post("/schedule")
 def schedule_job(request: TaskExecutionSettings):
     try:
-        job = scheduler_service.schedule_job(request, task_to_execute_callback=test)
-        if not job:
-            raise HTTPException(status_code=400, detail="Failed to schedule job.")
-        job_details = {
-            "id": job.id,
-            "name": job.name,
-            "func": str(job.func),
-            "args": job.args,
-            "kwargs": job.kwargs,
-            "coalesce": job.coalesce,
-            "trigger": str(job.trigger),
-            "executor": job.executor,
-            "misfire_grace_time": job.misfire_grace_time,
-            "max_instances": job.max_instances,
-            "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
-        }
-        return job_details
+        job = scheduler_service.schedule_job(request, callback=test)
+        return job
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -56,23 +41,8 @@ def list_jobs():
 @app.get("/job/{job_id}")
 def get_job(job_id: str):
     try:
-        job: Job | None = scheduler_service.scheduler.get_job(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found.")
-        
-        return {
-            "id": job.id,
-            "name": job.name,
-            "func": str(job.func),
-            "args": job.args,
-            "kwargs": job.kwargs,
-            "coalesce": job.coalesce,
-            "trigger": str(job.trigger),
-            "executor": job.executor,
-            "misfire_grace_time": job.misfire_grace_time,
-            "max_instances": job.max_instances,
-            "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
-        }
+       job = scheduler_service.get_job_by_id(job_id)
+       return job
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
