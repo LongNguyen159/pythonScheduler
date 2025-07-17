@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from features.scheduler import SchedulerService
-from features.schema import TaskExecutionSettings
+from features.schema import JobExecutionSettings
 from typing import List
 from apscheduler.job import Job
 # Initialize FastAPI app
@@ -16,7 +16,7 @@ def test():
     return "Test successful!"
 
 @app.post("/schedule")
-def schedule_job(request: TaskExecutionSettings):
+def schedule_job(request: JobExecutionSettings):
     try:
         job = scheduler_service.schedule_job(request, callback=test)
         return job

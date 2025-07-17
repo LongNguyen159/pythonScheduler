@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any, Union, Annotated, Literal
 from datetime import datetime
 from enum import Enum
+from uuid import uuid4
 
 #region Enums
 # ========== Enums ==========
@@ -80,12 +81,10 @@ class ExpertConfig(BaseModel):
 
 
 # ========== Main Scheduler Payload ==========
-
-import uuid
-class TaskExecutionSettings(BaseModel):
-    task_id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
-    task_name: Optional[str] = None  # Optional task name
-    task_config: Annotated[Union[SimpleConfig, ExpertConfig], Field(discriminator="mode")]
+class JobExecutionSettings(BaseModel):
+    job_id: Optional[str] = Field(default_factory=lambda: str(uuid4()))
+    job_name: Optional[str] = None  # Optional Job name
+    job_config: Annotated[Union[SimpleConfig, ExpertConfig], Field(discriminator="mode")]
 
 
 class JobResponse(BaseModel):

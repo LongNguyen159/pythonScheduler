@@ -3,7 +3,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.job import Job
 from datetime import datetime
 from features.schema import (
-    TaskExecutionSettings,
+    JobExecutionSettings,
     EndRepeatMode,
     RepeatType,
     Repeat,
@@ -33,12 +33,12 @@ class SchedulerService:
             dt = dt.replace(tzinfo=pytz.UTC)
         return dt.astimezone(pytz.UTC)
 
-    def _schedule_job(self, payload: TaskExecutionSettings, task_to_execute_callback: Any, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> Job | None:
-        if payload.task_id is None:
-            raise ValueError("task_id must not be None")
-        task_id: str = payload.task_id
-        task_name: Optional[str] = payload.task_name
-        schedule_config: SimpleConfig | ExpertConfig = payload.task_config
+    def _schedule_job(self, settings: JobExecutionSettings, job_to_execute_callback: Any, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> Job | None:
+        if settings.job_id is None:
+            raise ValueError("job_id must not be None")
+        job_id: str = settings.job_id
+        job_name: Optional[str] = settings.job_name
+        schedule_config: SimpleConfig | ExpertConfig = settings.job_config
 
         if schedule_config.mode == PayloadType.EXPERT:
             ''' Expert mode: CRON string scheduling '''
@@ -46,12 +46,12 @@ class SchedulerService:
             try:
 
                 trigger = CronTrigger.from_crontab(expert_config.cron_string, timezone=pytz.UTC)
-                print(f"Scheduling expert-mode CRON job {task_id} with trigger: {trigger}")
+                print(f"Scheduling expert-mode CRON job {job_id} with trigger: {trigger}")
                 return self.scheduler.add_job(
-                    func=task_to_execute_callback,
+                    func=job_to_execute_callback,
                     trigger=trigger,
-                    id=task_id,
-                    name=task_name,
+                    id=job_id,
+                    name=job_name,
                     args=args,
                     kwargs=kwargs,
                     replace_existing=True,
@@ -77,12 +77,12 @@ class SchedulerService:
             # One-time job
             if not repeat:
                 trigger = DateTrigger(run_date=start_time)
-                print(f"Scheduling one-time job {task_id} with trigger: {trigger}\n")
+                print(f"Scheduling one-time job {job_id} with trigger: {trigger}\n")
                 return self.scheduler.add_job(
-                    func=task_to_execute_callback,
+                    func=job_to_execute_callback,
                     trigger=trigger,
-                    id=task_id,
-                    name=task_name,
+                    id=job_id,
+                    name=job_name,
                     args=args,
                     kwargs=kwargs,
                     replace_existing=True,
@@ -206,12 +206,12 @@ class SchedulerService:
             #endregion
 
 
-            print(f"Scheduling job {task_id} with trigger: {trigger}\n")
+            print(f"Scheduling job {job_id} with trigger: {trigger}\n")
             return self.scheduler.add_job(
-                func=task_to_execute_callback,
+                func=job_to_execute_callback,
                 trigger=trigger,
-                id=task_id,
-                name=task_name,
+                id=job_id,
+                name=job_name,
                 args=args,
                 kwargs=kwargs,
                 replace_existing=True,
@@ -290,11 +290,11 @@ class SchedulerService:
             raise Exception(f"Scheduler failure: {str(e)}")
         
 
-    def schedule_job(self, task_configs: TaskExecutionSettings, callback: Any | None = None, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> JobResponse | None:
+    def schedule_job(self, job_configs: JobExecutionSettings, callback: Any | None = None, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> JobResponse | None:
         '''
-            Schedule a job based on the provided TaskExecutionSettings.
+            Schedule a job based on the provided JobExecutionSettings.
             Parameters:
-                - task_configs: `TaskExecutionSettings` containing task ID, name, and configuration.
+                - Job_configs: `JobExecutionSettings` containing Job ID, name, and configuration.
                     - Configuration mode: `SimpleConfig` or `ExpertConfig`.
                     - `SimpleConfig`: Contains start_time, end_time, repeat configurations.
                     - `ExpertConfig`: Contains a CRON string for scheduling.
@@ -308,7 +308,7 @@ class SchedulerService:
             Returns a JobResponse type with job details.
         '''
         try:
-            job = self._schedule_job(task_configs, task_to_execute_callback=callback, args=args, kwargs=kwargs)
+            job = self._schedule_job(job_configs, job_to_execute_callback=callback, args=args, kwargs=kwargs)
             if not job:
                 raise Exception("Failed to schedule job: Job not found.")
             
