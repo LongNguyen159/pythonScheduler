@@ -34,6 +34,8 @@ class SchedulerService:
         return dt.astimezone(pytz.UTC)
 
     def _schedule_job(self, payload: TaskExecutionSettings, task_to_execute_callback: Any, args: Optional[Any] = None, kwargs: Optional[Dict[str, Any]] = None) -> Job | None:
+        if payload.task_id is None:
+            raise ValueError("task_id must not be None")
         task_id: str = payload.task_id
         task_name: Optional[str] = payload.task_name
         schedule_config: SimpleConfig | ExpertConfig = payload.task_config

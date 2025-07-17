@@ -83,7 +83,7 @@ class ExpertConfig(BaseModel):
 
 import uuid
 class TaskExecutionSettings(BaseModel):
-    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
     task_name: Optional[str] = None  # Optional task name
     task_config: Annotated[Union[SimpleConfig, ExpertConfig], Field(discriminator="mode")]
 
